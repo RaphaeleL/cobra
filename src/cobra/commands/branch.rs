@@ -36,6 +36,14 @@ pub fn switch(name: &str) -> io::Result<()> {
     Ok(())
 }
 
+pub fn delete(name: &str) -> io::Result<()> {
+    let repo = Repository::open(".")?;
+    let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+    ref_store.delete_branch(name)?;
+    println!("Deleted branch '{}'", name);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,6 +88,54 @@ mod tests {
         let branch_ref = "refs/heads/doesnotexist";
         let exists = ref_store.read_ref(branch_ref)?.is_some();
         assert!(!exists);
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_branch_command() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo = Repository::init(temp_dir.path().to_str().unwrap())?;
+        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
+        
+        // Create a branch
+        ref_store.create_branch("temp")?;
+        
+        // Verify it exists
+        let branches = ref_store.list_branches()?;
+        assert!(branches.contains(&"temp".to_string()));
+        
+        // Delete it
+        ref_store.delete_branch("temp")?;
+        
+        // Verify it's gone
+        let branches_after = ref_store.list_branches()?;
+        assert!(!branches_after.contains(&"temp".to_string()));
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_current_branch_command() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo = Repository::init(temp_dir.path().to_str().unwrap())?;
+        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
+        
+        // Create a branch and switch to it
+        ref_store.create_branch("current")?;
+        ref_store.update_head("ref: refs/heads/current")?;
+        
+        // Try to delete the current branch
+        let result = ref_store.delete_branch("current");
+        assert!(result.is_err());
+        
+        match result {
+            Err(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+                assert!(e.to_string().contains("Cannot delete the current branch"));
+            }
+            _ => panic!("Expected error"),
+        }
+        
         Ok(())
     }
 } 

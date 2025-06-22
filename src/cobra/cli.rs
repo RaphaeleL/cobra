@@ -71,6 +71,14 @@ pub fn run() -> io::Result<()> {
                         .value_name("NAME")
                         .num_args(1)
                 )
+                .arg(
+                    Arg::new("delete")
+                        .short('d')
+                        .long("delete")
+                        .help("Delete a branch")
+                        .value_name("NAME")
+                        .num_args(1)
+                )
         )
         .get_matches();
 
@@ -100,6 +108,8 @@ pub fn run() -> io::Result<()> {
                 commands::branch::list()
             } else if let Some(name) = sub_matches.get_one::<String>("switch") {
                 commands::branch::switch(name)
+            } else if let Some(name) = sub_matches.get_one::<String>("delete") {
+                commands::branch::delete(name)
             } else {
                 println!("No branch subcommand was used");
                 Ok(())

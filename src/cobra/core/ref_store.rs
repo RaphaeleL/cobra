@@ -112,6 +112,34 @@ impl RefStore {
         }
         Ok(branches)
     }
+
+    pub fn delete_branch(&self, branch_name: &str) -> io::Result<()> {
+        // Check if branch exists
+        let branch_ref = format!("refs/heads/{}", branch_name);
+        if self.read_ref(&branch_ref)?.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Branch '{}' does not exist", branch_name),
+            ));
+        }
+
+        // Check if we're trying to delete the current branch
+        let head_content = self.read_head()?;
+        if let Some(content) = head_content {
+            if content == format!("ref: {}", branch_ref) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Cannot delete the current branch '{}'", branch_name),
+                ));
+            }
+        }
+
+        // Delete the branch file
+        let branch_path = self.git_dir.join(&branch_ref);
+        fs::remove_file(branch_path)?;
+        
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +249,83 @@ mod tests {
         // Don't initialize refs, so no branches exist
         let branches = ref_store.list_branches()?;
         assert_eq!(branches.len(), 0);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_branch() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        
+        // Create a branch
+        ref_store.create_branch("feature")?;
+        
+        // Verify branch exists
+        let branches = ref_store.list_branches()?;
+        assert!(branches.contains(&"feature".to_string()));
+        
+        // Delete the branch
+        ref_store.delete_branch("feature")?;
+        
+        // Verify branch is gone
+        let branches_after = ref_store.list_branches()?;
+        assert!(!branches_after.contains(&"feature".to_string()));
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_nonexistent_branch() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        
+        // Try to delete a non-existent branch
+        let result = ref_store.delete_branch("nonexistent");
+        assert!(result.is_err());
+        
+        match result {
+            Err(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::NotFound);
+                assert!(e.to_string().contains("does not exist"));
+            }
+            _ => panic!("Expected error"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_current_branch() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        
+        // Create a branch
+        ref_store.create_branch("feature")?;
+        
+        // Switch to the branch
+        ref_store.update_head("ref: refs/heads/feature")?;
+        
+        // Try to delete the current branch
+        let result = ref_store.delete_branch("feature");
+        assert!(result.is_err());
+        
+        match result {
+            Err(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+                assert!(e.to_string().contains("Cannot delete the current branch"));
+            }
+            _ => panic!("Expected error"),
+        }
         
         Ok(())
     }
