@@ -21,39 +21,26 @@ Cobra is a Git-like version control system implemented in Rust. It provides basi
 ## Commands
 
 ```bash
+$ cobra -h
+A Git implementation in Rust
 
-# Print the help message
-cobra help
+Usage: cobra [COMMAND]
 
-# Initialize a new repository
-cobra init [path]
+Commands:
+  init      Create an empty Cobra repository
+  add       Add file contents to the index
+  commit    Record changes to the repository
+  log       Show commit logs
+  status    Show the working tree status
+  branch    Branch operations
+  checkout  Switch branches or restore files
+  rebase    Reapply commits on top of another base tip
+  help      Print this message or the help of the given subcommand(s)
 
-# Add files to staging area
-cobra add <file>
-
-# Create a new commit
-cobra commit -m "message"
-
-# Show working directory status
-cobra status
-
-# Show commit history
-cobra log
-
-# Create a branch
-cobra branch -c dev
-
-# Switch to a branch 
-cobra branch -s dev
-
-# Show all branches 
-cobra branch -a
-
-# Delete a branch 
-cobra branch -d dev
-
-# Merge 'dev' into the current branch 
-cobra branch -m dev
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+raphaele@macbook:~/Projects/cobra$ 
 ```
 
 ## Implementation Details
