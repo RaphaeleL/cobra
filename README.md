@@ -53,16 +53,7 @@ The repository structure is similar to Git:
 
 ## Development Status
 
-This is a learning project that implements core Git functionality. While it's functional for basic version control tasks, it's not intended for production use. Some features that are currently implemented:
-
-- [x] Basic repository operations
-- [x] File staging and committing
-- [x] Commit history
-- [x] Status checking
-- [x] Object storage (blobs, trees, commits)
-- [x] Branch
-- [x] Stashing
-- [ ] Remote repository support
+This is a learning project that implements core Git functionality. While it's functional for basic version control tasks, it's not intended for any remote repositories. At least yet.
 
 ## Contributing
 
