@@ -45,6 +45,33 @@ pub fn run() -> io::Result<()> {
             Command::new("status")
                 .about("Show the working tree status")
         )
+        .subcommand(
+            Command::new("branch")
+                .about("Branch operations")
+                .arg(
+                    Arg::new("create")
+                        .short('c')
+                        .long("create")
+                        .help("Create a new branch")
+                        .value_name("NAME")
+                        .num_args(1)
+                )
+                .arg(
+                    Arg::new("all")
+                        .short('a')
+                        .long("all")
+                        .help("List all branches")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    Arg::new("switch")
+                        .short('s')
+                        .long("switch")
+                        .help("Switch to a branch")
+                        .value_name("NAME")
+                        .num_args(1)
+                )
+        )
         .get_matches();
 
     match matches.subcommand() {
@@ -65,6 +92,18 @@ pub fn run() -> io::Result<()> {
         },
         Some(("status", _)) => {
             commands::status::run()
+        },
+        Some(("branch", sub_matches)) => {
+            if let Some(name) = sub_matches.get_one::<String>("create") {
+                commands::branch::create(name)
+            } else if sub_matches.get_flag("all") {
+                commands::branch::list()
+            } else if let Some(name) = sub_matches.get_one::<String>("switch") {
+                commands::branch::switch(name)
+            } else {
+                println!("No branch subcommand was used");
+                Ok(())
+            }
         },
         _ => {
             println!("No subcommand was used");
