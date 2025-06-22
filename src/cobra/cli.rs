@@ -6,14 +6,14 @@ use crate::cobra::commands;
 
 pub fn run() -> io::Result<()> {
     let matches = Command::new("cobra")
-        .version("0.1.0")
-        .about("A Git implementation in Rust")
+        .version("1.0")
+        .about("A Git-like version control system")
         .subcommand(
             Command::new("init")
-                .about("Create an empty Cobra repository")
+                .about("Initialize a new repository")
                 .arg(
                     Arg::new("path")
-                        .help("Where to create the repository")
+                        .help("Path to initialize repository in")
                         .default_value(".")
                 )
         )
@@ -21,8 +21,8 @@ pub fn run() -> io::Result<()> {
             Command::new("add")
                 .about("Add file contents to the index")
                 .arg(
-                    Arg::new("path")
-                        .help("Files to add")
+                    Arg::new("file")
+                        .help("File to add")
                         .required(true)
                 )
         )
@@ -31,9 +31,9 @@ pub fn run() -> io::Result<()> {
                 .about("Record changes to the repository")
                 .arg(
                     Arg::new("message")
+                        .help("Commit message")
                         .short('m')
                         .long("message")
-                        .help("The commit message")
                         .required(true)
                 )
         )
@@ -47,63 +47,56 @@ pub fn run() -> io::Result<()> {
         )
         .subcommand(
             Command::new("branch")
-                .about("Branch operations")
-                .arg(
-                    Arg::new("create")
-                        .short('c')
-                        .long("create")
-                        .help("Create a new branch")
-                        .value_name("NAME")
-                        .num_args(1)
+                .about("List, create, or delete branches")
+                .subcommand(
+                    Command::new("list")
+                        .about("List all branches")
+                        .alias("ls")
                 )
-                .arg(
-                    Arg::new("all")
-                        .short('a')
-                        .long("all")
-                        .help("List all branches")
-                        .action(clap::ArgAction::SetTrue)
+                .subcommand(
+                    Command::new("create")
+                        .about("Create a new branch")
+                        .arg(
+                            Arg::new("name")
+                                .help("Name of the branch to create")
+                                .required(true)
+                        )
                 )
-                .arg(
-                    Arg::new("switch")
-                        .short('s')
-                        .long("switch")
-                        .help("Switch to a branch")
-                        .value_name("NAME")
-                        .num_args(1)
+                .subcommand(
+                    Command::new("checkout")
+                        .about("Switch to a branch")
+                        .arg(
+                            Arg::new("name")
+                                .help("Name of the branch to switch to")
+                                .required(true)
+                        )
                 )
-                .arg(
-                    Arg::new("delete")
-                        .short('d')
-                        .long("delete")
-                        .help("Delete a branch")
-                        .value_name("NAME")
-                        .num_args(1)
+                .subcommand(
+                    Command::new("delete")
+                        .about("Delete a branch")
+                        .arg(
+                            Arg::new("name")
+                                .help("Name of the branch to delete")
+                                .required(true)
+                        )
                 )
-                .arg(
-                    Arg::new("merge")
-                        .short('m')
-                        .long("merge")
-                        .help("Merge a branch into the current branch")
-                        .value_name("NAME")
-                        .num_args(1)
+                .subcommand(
+                    Command::new("merge")
+                        .about("Merge a branch into the current branch")
+                        .arg(
+                            Arg::new("name")
+                                .help("Name of the branch to merge")
+                                .required(true)
+                        )
                 )
-        )
-        .subcommand(
-            Command::new("checkout")
-                .about("Switch branches or restore files")
-                .arg(
-                    Arg::new("path")
-                        .help("Branch name or file path to checkout")
-                        .required(true)
-                )
-        )
-        .subcommand(
-            Command::new("rebase")
-                .about("Reapply commits on top of another base tip")
-                .arg(
-                    Arg::new("branch")
-                        .help("Branch to rebase onto")
-                        .required(true)
+                .subcommand(
+                    Command::new("rebase")
+                        .about("Reapply commits on top of another base tip")
+                        .arg(
+                            Arg::new("branch")
+                                .help("Branch to rebase onto")
+                                .required(true)
+                        )
                 )
         )
         .subcommand(
@@ -159,8 +152,8 @@ pub fn run() -> io::Result<()> {
             commands::init::run(path)
         },
         Some(("add", sub_matches)) => {
-            let path = sub_matches.get_one::<String>("path").unwrap();
-            commands::add::run(path)
+            let file = sub_matches.get_one::<String>("file").unwrap();
+            commands::add::run(file)
         },
         Some(("commit", sub_matches)) => {
             let message = sub_matches.get_one::<String>("message").unwrap();
@@ -173,28 +166,35 @@ pub fn run() -> io::Result<()> {
             commands::status::run()
         },
         Some(("branch", sub_matches)) => {
-            if let Some(name) = sub_matches.get_one::<String>("create") {
-                commands::branch::create(name)
-            } else if sub_matches.get_flag("all") {
-                commands::branch::list()
-            } else if let Some(name) = sub_matches.get_one::<String>("switch") {
-                commands::branch::switch(name)
-            } else if let Some(name) = sub_matches.get_one::<String>("delete") {
-                commands::branch::delete(name)
-            } else if let Some(name) = sub_matches.get_one::<String>("merge") {
-                commands::branch::merge(name)
-            } else {
-                println!("No branch subcommand was used");
-                Ok(())
+            match sub_matches.subcommand() {
+                Some(("list", _)) => {
+                    commands::branch::list()
+                },
+                Some(("create", sub_matches)) => {
+                    let name = sub_matches.get_one::<String>("name").unwrap();
+                    commands::branch::create(name)
+                },
+                Some(("checkout", sub_matches)) => {
+                    let name = sub_matches.get_one::<String>("name").unwrap();
+                    commands::branch::switch(name)
+                },
+                Some(("delete", sub_matches)) => {
+                    let name = sub_matches.get_one::<String>("name").unwrap();
+                    commands::branch::delete(name)
+                },
+                Some(("merge", sub_matches)) => {
+                    let name = sub_matches.get_one::<String>("name").unwrap();
+                    commands::branch::merge(name)
+                },
+                Some(("rebase", sub_matches)) => {
+                    let branch = sub_matches.get_one::<String>("branch").unwrap();
+                    commands::branch::rebase(branch)
+                },
+                _ => {
+                    // Default to list if no subcommand specified
+                    commands::branch::list()
+                }
             }
-        },
-        Some(("checkout", sub_matches)) => {
-            let path = sub_matches.get_one::<String>("path").unwrap();
-            commands::checkout::run(path)
-        },
-        Some(("rebase", sub_matches)) => {
-            let branch = sub_matches.get_one::<String>("branch").unwrap();
-            commands::rebase::run(branch)
         },
         Some(("stash", sub_matches)) => {
             match sub_matches.subcommand() {

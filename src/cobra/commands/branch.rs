@@ -1,55 +1,151 @@
-// Create a new branch
+// Branch management commands
 use std::io;
 use crate::cobra::core::repository::Repository;
 
-pub fn run(name: &str) -> io::Result<()> {
-    create(name)
+pub fn list() -> io::Result<()> {
+    let repo = Repository::open(".")?;
+    let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+    
+    let branches = ref_store.list_branches()?;
+    
+    if branches.is_empty() {
+        println!("No branches found");
+        return Ok(());
+    }
+    
+    // Get current branch name
+    let head_content = ref_store.read_head()?;
+    let current_branch = if let Some(content) = head_content {
+        if content.starts_with("ref: ") {
+            let branch_ref = content.strip_prefix("ref: ").unwrap().trim();
+            branch_ref.strip_prefix("refs/heads/").unwrap_or(branch_ref).to_string()
+        } else {
+            "".to_string()
+        }
+    } else {
+        "".to_string()
+    };
+    
+    for (name, hash) in branches {
+        let current_marker = if name == current_branch { " *" } else { "" };
+        println!("{}{} {}", name, current_marker, &hash[..7]);
+    }
+    
+    Ok(())
 }
 
 pub fn create(name: &str) -> io::Result<()> {
     let repo = Repository::open(".")?;
     let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+    
     ref_store.create_branch(name)?;
     println!("Created branch '{}'", name);
-    Ok(())
-}
-
-pub fn list() -> io::Result<()> {
-    let repo = Repository::open(".")?;
-    let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
-    let branches = ref_store.list_branches()?;
-    for branch in branches {
-        println!("{}", branch);
-    }
+    
     Ok(())
 }
 
 pub fn switch(name: &str) -> io::Result<()> {
     let repo = Repository::open(".")?;
-    let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
-    let branch_ref = format!("refs/heads/{}", name);
-    if ref_store.read_ref(&branch_ref)?.is_none() {
-        return Err(io::Error::new(io::ErrorKind::NotFound, format!("Branch '{}' does not exist", name)));
-    }
-    ref_store.update_head(&format!("ref: {}", branch_ref))?;
+    let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+    
+    ref_store.switch_branch(name)?;
     println!("Switched to branch '{}'", name);
+    
     Ok(())
 }
 
 pub fn delete(name: &str) -> io::Result<()> {
     let repo = Repository::open(".")?;
     let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+    
     ref_store.delete_branch(name)?;
     println!("Deleted branch '{}'", name);
+    
     Ok(())
 }
 
 pub fn merge(name: &str) -> io::Result<()> {
     let repo = Repository::open(".")?;
     let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+    
     ref_store.merge_branch(name)?;
     println!("Merged branch '{}' into current branch", name);
+    
     Ok(())
+}
+
+pub fn rebase(branch: &str) -> io::Result<()> {
+    let repo = Repository::open(".")?;
+    let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
+    
+    // Check if target branch exists
+    let branch_ref = format!("refs/heads/{}", branch);
+    let target_commit = ref_store.read_ref(&branch_ref)?
+        .ok_or_else(|| io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Branch '{}' does not exist", branch),
+        ))?;
+
+    // Get current branch commit
+    let head_content = ref_store.read_head()?
+        .ok_or_else(|| io::Error::new(
+            io::ErrorKind::NotFound,
+            "HEAD reference not found",
+        ))?;
+
+    let current_commit = if head_content.starts_with("ref: ") {
+        let current_branch_ref = &head_content[5..];
+        ref_store.read_ref(current_branch_ref)?
+            .ok_or_else(|| io::Error::new(
+                io::ErrorKind::NotFound,
+                "Current branch reference not found",
+            ))?
+    } else {
+        head_content.clone()
+    };
+
+    // Check if we're trying to rebase onto the same branch
+    if current_commit == target_commit {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Cannot rebase branch '{}' onto itself", branch),
+        ));
+    }
+
+    // Create a new commit with the target branch as parent
+    let author = crate::cobra::core::signature::Signature::new(
+        "Your Name".to_string(),
+        "you@example.com".to_string(),
+    );
+    let committer = author.clone();
+
+    let rebase_commit = crate::cobra::core::object::Object::new_commit(
+        current_commit.clone(), // Use current tree (simplified)
+        vec![target_commit],
+        author,
+        committer,
+        format!("Rebase onto {}", branch),
+    );
+
+    // Write rebase commit
+    let rebase_hash = rebase_commit.hash();
+    rebase_commit.write_to_objects_dir(&repo.git_dir)?;
+
+    // Update current branch to point to rebase commit
+    if head_content.starts_with("ref: ") {
+        let current_branch_ref = &head_content[5..];
+        ref_store.update_ref(current_branch_ref, &rebase_hash)?;
+    } else {
+        ref_store.update_head(&rebase_hash)?;
+    }
+
+    println!("Rebased current branch onto '{}'", branch);
+    Ok(())
+}
+
+// Legacy function for backward compatibility
+pub fn run(name: &str) -> io::Result<()> {
+    create(name)
 }
 
 #[cfg(test)]
@@ -61,13 +157,22 @@ mod tests {
     fn test_create_and_list_branches() -> io::Result<()> {
         let temp_dir = TempDir::new()?;
         let repo = Repository::init(temp_dir.path().to_str().unwrap())?;
-        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
+        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+        
+        // Create branches
         ref_store.create_branch("feature1")?;
         ref_store.create_branch("feature2")?;
+        
+        // List branches
         let branches = ref_store.list_branches()?;
-        assert!(branches.contains(&"main".to_string()));
-        assert!(branches.contains(&"feature1".to_string()));
-        assert!(branches.contains(&"feature2".to_string()));
+        
+        // Should contain main, feature1, and feature2
+        let branch_names: Vec<String> = branches.iter().map(|(name, _)| name.clone()).collect();
+        assert!(branch_names.contains(&"main".to_string()));
+        assert!(branch_names.contains(&"feature1".to_string()));
+        assert!(branch_names.contains(&"feature2".to_string()));
+        assert_eq!(branches.len(), 3);
+        
         Ok(())
     }
 
@@ -75,13 +180,18 @@ mod tests {
     fn test_switch_branch_success() -> io::Result<()> {
         let temp_dir = TempDir::new()?;
         let repo = Repository::init(temp_dir.path().to_str().unwrap())?;
-        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
-        ref_store.create_branch("dev")?;
-        // Should succeed
-        ref_store.update_head("ref: refs/heads/main")?;
-        ref_store.update_head(&format!("ref: refs/heads/{}", "dev"))?;
-        let head = ref_store.read_head()?.unwrap();
-        assert_eq!(head, "ref: refs/heads/dev");
+        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+        
+        // Create a branch
+        ref_store.create_branch("feature")?;
+        
+        // Switch to the branch
+        ref_store.switch_branch("feature")?;
+        
+        // Verify HEAD points to the branch
+        let head_content = ref_store.read_head()?;
+        assert_eq!(head_content, Some("ref: refs/heads/feature".to_string()));
+        
         Ok(())
     }
 
@@ -89,13 +199,20 @@ mod tests {
     fn test_switch_branch_not_found() -> io::Result<()> {
         let temp_dir = TempDir::new()?;
         let repo = Repository::init(temp_dir.path().to_str().unwrap())?;
-        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
-        let result = ref_store.update_head("ref: refs/heads/doesnotexist");
-        assert!(result.is_ok()); // The file is created, but the branch doesn't exist
-        // Now, simulate the CLI switch logic
-        let branch_ref = "refs/heads/doesnotexist";
-        let exists = ref_store.read_ref(branch_ref)?.is_some();
-        assert!(!exists);
+        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+        
+        // Try to switch to non-existent branch
+        let result = ref_store.switch_branch("nonexistent");
+        assert!(result.is_err());
+        
+        match result {
+            Err(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::NotFound);
+                assert!(e.to_string().contains("does not exist"));
+            }
+            _ => panic!("Expected error"),
+        }
+        
         Ok(())
     }
 
@@ -103,21 +220,23 @@ mod tests {
     fn test_delete_branch_command() -> io::Result<()> {
         let temp_dir = TempDir::new()?;
         let repo = Repository::init(temp_dir.path().to_str().unwrap())?;
-        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
+        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
         
         // Create a branch
         ref_store.create_branch("temp")?;
         
-        // Verify it exists
+        // Verify branch exists
         let branches = ref_store.list_branches()?;
-        assert!(branches.contains(&"temp".to_string()));
+        let branch_names: Vec<String> = branches.iter().map(|(name, _)| name.clone()).collect();
+        assert!(branch_names.contains(&"temp".to_string()));
         
-        // Delete it
+        // Delete the branch
         ref_store.delete_branch("temp")?;
         
-        // Verify it's gone
+        // Verify branch is gone
         let branches_after = ref_store.list_branches()?;
-        assert!(!branches_after.contains(&"temp".to_string()));
+        let branch_names_after: Vec<String> = branches_after.iter().map(|(name, _)| name.clone()).collect();
+        assert!(!branch_names_after.contains(&"temp".to_string()));
         
         Ok(())
     }

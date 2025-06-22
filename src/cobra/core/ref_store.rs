@@ -95,7 +95,7 @@ impl RefStore {
         self.update_ref(&branch_ref, &current_commit)
     }
 
-    pub fn list_branches(&self) -> io::Result<Vec<String>> {
+    pub fn list_branches(&self) -> io::Result<Vec<(String, String)>> {
         let heads_dir = self.git_dir.join("refs/heads");
         if !heads_dir.exists() {
             return Ok(Vec::new());
@@ -106,7 +106,10 @@ impl RefStore {
             let entry = entry?;
             if entry.file_type()?.is_file() {
                 if let Some(name) = entry.file_name().to_str() {
-                    branches.push(name.to_string());
+                    let branch_ref = format!("refs/heads/{}", name);
+                    if let Some(hash) = self.read_ref(&branch_ref)? {
+                        branches.push((name.to_string(), hash));
+                    }
                 }
             }
         }
@@ -332,6 +335,17 @@ impl RefStore {
         fs::write(&stash_list_path, content)?;
         Ok(())
     }
+
+    pub fn switch_branch(&self, branch_name: &str) -> io::Result<()> {
+        let branch_ref = format!("refs/heads/{}", branch_name);
+        if self.read_ref(&branch_ref)?.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound, 
+                format!("Branch '{}' does not exist", branch_name)
+            ));
+        }
+        self.update_head(&format!("ref: {}", branch_ref))
+    }
 }
 
 #[cfg(test)]
@@ -425,9 +439,10 @@ mod tests {
         let branches = ref_store.list_branches()?;
         
         // Should contain main, feature1, and feature2
-        assert!(branches.contains(&"main".to_string()));
-        assert!(branches.contains(&"feature1".to_string()));
-        assert!(branches.contains(&"feature2".to_string()));
+        let branch_names: Vec<String> = branches.iter().map(|(name, _)| name.clone()).collect();
+        assert!(branch_names.contains(&"main".to_string()));
+        assert!(branch_names.contains(&"feature1".to_string()));
+        assert!(branch_names.contains(&"feature2".to_string()));
         assert_eq!(branches.len(), 3);
         
         Ok(())
@@ -458,14 +473,16 @@ mod tests {
         
         // Verify branch exists
         let branches = ref_store.list_branches()?;
-        assert!(branches.contains(&"feature".to_string()));
+        let branch_names: Vec<String> = branches.iter().map(|(name, _)| name.clone()).collect();
+        assert!(branch_names.contains(&"feature".to_string()));
         
         // Delete the branch
         ref_store.delete_branch("feature")?;
         
         // Verify branch is gone
         let branches_after = ref_store.list_branches()?;
-        assert!(!branches_after.contains(&"feature".to_string()));
+        let branch_names_after: Vec<String> = branches_after.iter().map(|(name, _)| name.clone()).collect();
+        assert!(!branch_names_after.contains(&"feature".to_string()));
         
         Ok(())
     }
@@ -603,9 +620,12 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let ref_store = RefStore::new(temp_dir.path().to_path_buf());
         
-        // Initialize refs
+        // Initialize refs and create repository structure
         ref_store.create_initial_refs()?;
         ref_store.update_ref("refs/heads/main", "main_commit")?;
+        
+        // Create objects directory for stash creation
+        fs::create_dir_all(temp_dir.path().join(".cobra/objects"))?;
         
         // Create a stash
         let stash_hash = ref_store.create_stash(Some("Test stash"))?;
@@ -625,9 +645,12 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let ref_store = RefStore::new(temp_dir.path().to_path_buf());
         
-        // Initialize refs
+        // Initialize refs and create repository structure
         ref_store.create_initial_refs()?;
         ref_store.update_ref("refs/heads/main", "main_commit")?;
+        
+        // Create objects directory for stash creation
+        fs::create_dir_all(temp_dir.path().join(".cobra/objects"))?;
         
         // Create multiple stashes
         ref_store.create_stash(Some("First stash"))?;
@@ -647,9 +670,12 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let ref_store = RefStore::new(temp_dir.path().to_path_buf());
         
-        // Initialize refs
+        // Initialize refs and create repository structure
         ref_store.create_initial_refs()?;
         ref_store.update_ref("refs/heads/main", "main_commit")?;
+        
+        // Create objects directory for stash creation
+        fs::create_dir_all(temp_dir.path().join(".cobra/objects"))?;
         
         // Create a stash
         let stash_hash = ref_store.create_stash(Some("Test stash"))?;
@@ -670,9 +696,12 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let ref_store = RefStore::new(temp_dir.path().to_path_buf());
         
-        // Initialize refs
+        // Initialize refs and create repository structure
         ref_store.create_initial_refs()?;
         ref_store.update_ref("refs/heads/main", "main_commit")?;
+        
+        // Create objects directory for stash creation
+        fs::create_dir_all(temp_dir.path().join(".cobra/objects"))?;
         
         // Create stashes
         ref_store.create_stash(Some("First stash"))?;
