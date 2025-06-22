@@ -39,6 +39,18 @@ cobra status
 
 # Show commit history
 cobra log
+
+# Create a branch
+cobra branch -c dev
+
+# Switch to a branch 
+cobra branch -s dev
+
+# Show all branches 
+cobra branch -a
+
+# Delete a branch 
+cobra branch -d dev
 ```
 
 ## Implementation Details
