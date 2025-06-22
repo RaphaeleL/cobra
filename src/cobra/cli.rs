@@ -88,6 +88,24 @@ pub fn run() -> io::Result<()> {
                         .num_args(1)
                 )
         )
+        .subcommand(
+            Command::new("checkout")
+                .about("Switch branches or restore files")
+                .arg(
+                    Arg::new("path")
+                        .help("Branch name or file path to checkout")
+                        .required(true)
+                )
+        )
+        .subcommand(
+            Command::new("rebase")
+                .about("Reapply commits on top of another base tip")
+                .arg(
+                    Arg::new("branch")
+                        .help("Branch to rebase onto")
+                        .required(true)
+                )
+        )
         .get_matches();
 
     match matches.subcommand() {
@@ -124,6 +142,14 @@ pub fn run() -> io::Result<()> {
                 println!("No branch subcommand was used");
                 Ok(())
             }
+        },
+        Some(("checkout", sub_matches)) => {
+            let path = sub_matches.get_one::<String>("path").unwrap();
+            commands::checkout::run(path)
+        },
+        Some(("rebase", sub_matches)) => {
+            let branch = sub_matches.get_one::<String>("branch").unwrap();
+            commands::rebase::run(branch)
         },
         _ => {
             println!("No subcommand was used");
