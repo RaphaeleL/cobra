@@ -51,9 +51,7 @@ The repository structure is similar to Git:
       └── heads/
 ```
 
-## Development Status
-
-This is a learning project that implements core Git functionality. While it's functional for basic version control tasks, it's not intended for any remote repositories. At least yet.
+Since there is no Remote Repository, the `log` command is showing commited changes. In addition do that reason, there is no `push` or `remote` command. It might follow in the future.
 
 ## Contributing
 
