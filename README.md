@@ -51,7 +51,7 @@ The repository structure is similar to Git:
       └── heads/
 ```
 
-Since there is no Remote Repository, the `log` command is showing commited changes, not pushed changes. Also, `status` is handling commited changes, like pushed changes. In addition to that reason, there is no `push` or `remote` command. It might follow in the future.
+> HINT: Since there is no Remote Repository, the `log` command is showing commited changes, not pushed changes. Also, `status` is handling commited changes, like pushed changes. In addition to that reason, there is no `push` or `remote` command. Remote Repositories might follow in the future.
 
 ## Contributing
 
