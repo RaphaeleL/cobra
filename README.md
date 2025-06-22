@@ -2,15 +2,6 @@
 
 Cobra is a Git-like version control system implemented in Rust. It provides basic version control functionality similar to Git, allowing you to track changes in your codebase, create commits, and manage your project's history.
 
-## Features
-
-- Repository initialization
-- File staging (index)
-- Commit creation
-- Status checking
-- Commit history viewing
-- Tree and blob object handling
-
 ## Installation
 
 1. Make sure you have Rust and Cargo installed
