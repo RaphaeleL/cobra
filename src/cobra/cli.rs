@@ -79,6 +79,14 @@ pub fn run() -> io::Result<()> {
                         .value_name("NAME")
                         .num_args(1)
                 )
+                .arg(
+                    Arg::new("merge")
+                        .short('m')
+                        .long("merge")
+                        .help("Merge a branch into the current branch")
+                        .value_name("NAME")
+                        .num_args(1)
+                )
         )
         .get_matches();
 
@@ -110,6 +118,8 @@ pub fn run() -> io::Result<()> {
                 commands::branch::switch(name)
             } else if let Some(name) = sub_matches.get_one::<String>("delete") {
                 commands::branch::delete(name)
+            } else if let Some(name) = sub_matches.get_one::<String>("merge") {
+                commands::branch::merge(name)
             } else {
                 println!("No branch subcommand was used");
                 Ok(())

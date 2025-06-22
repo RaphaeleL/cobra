@@ -140,6 +140,75 @@ impl RefStore {
         
         Ok(())
     }
+
+    pub fn merge_branch(&self, branch_name: &str) -> io::Result<()> {
+        // Check if branch exists
+        let branch_ref = format!("refs/heads/{}", branch_name);
+        let branch_commit = self.read_ref(&branch_ref)?
+            .ok_or_else(|| io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Branch '{}' does not exist", branch_name),
+            ))?;
+
+        // Get current branch commit
+        let head_content = self.read_head()?
+            .ok_or_else(|| io::Error::new(
+                io::ErrorKind::NotFound,
+                "HEAD reference not found",
+            ))?;
+
+        let current_commit = if head_content.starts_with("ref: ") {
+            // HEAD points to a branch
+            let current_branch_ref = &head_content[5..];
+            self.read_ref(current_branch_ref)?
+                .ok_or_else(|| io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "Current branch reference not found",
+                ))?
+        } else {
+            // HEAD points directly to a commit
+            head_content.clone()
+        };
+
+        // Check if we're trying to merge the same branch
+        if current_commit == branch_commit {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Cannot merge branch '{}' into itself", branch_name),
+            ));
+        }
+
+        // For now, we'll create a simple merge commit
+        // In a real implementation, you'd need to handle conflicts, etc.
+        let author = crate::cobra::core::signature::Signature::new(
+            "Your Name".to_string(),
+            "you@example.com".to_string(),
+        );
+        let committer = author.clone();
+
+        // Create merge commit with both parents
+        let merge_commit = crate::cobra::core::object::Object::new_commit(
+            current_commit.clone(), // Use current tree (simplified)
+            vec![current_commit, branch_commit],
+            author,
+            committer,
+            format!("Merge branch '{}'", branch_name),
+        );
+
+        // Write merge commit
+        let merge_hash = merge_commit.hash();
+        merge_commit.write_to_objects_dir(&self.git_dir)?;
+
+        // Update current branch to point to merge commit
+        if head_content.starts_with("ref: ") {
+            let current_branch_ref = &head_content[5..];
+            self.update_ref(current_branch_ref, &merge_hash)?;
+        } else {
+            self.update_head(&merge_hash)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -323,6 +392,82 @@ mod tests {
             Err(e) => {
                 assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
                 assert!(e.to_string().contains("Cannot delete the current branch"));
+            }
+            _ => panic!("Expected error"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_merge_branch() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        
+        // Create a branch
+        ref_store.create_branch("feature")?;
+        
+        // Set some commits (simplified for testing)
+        ref_store.update_ref("refs/heads/main", "main_commit")?;
+        ref_store.update_ref("refs/heads/feature", "feature_commit")?;
+        
+        // Merge feature into main
+        ref_store.merge_branch("feature")?;
+        
+        // Verify the merge created a new commit
+        let main_commit = ref_store.read_ref("refs/heads/main")?;
+        assert!(main_commit.is_some());
+        assert_ne!(main_commit.unwrap(), "main_commit"); // Should be different after merge
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_merge_nonexistent_branch() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        
+        // Try to merge a non-existent branch
+        let result = ref_store.merge_branch("nonexistent");
+        assert!(result.is_err());
+        
+        match result {
+            Err(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::NotFound);
+                assert!(e.to_string().contains("does not exist"));
+            }
+            _ => panic!("Expected error"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_merge_same_branch() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        
+        // Set same commit for both branches
+        ref_store.update_ref("refs/heads/main", "same_commit")?;
+        ref_store.update_ref("refs/heads/feature", "same_commit")?;
+        
+        // Try to merge the same branch
+        let result = ref_store.merge_branch("feature");
+        assert!(result.is_err());
+        
+        match result {
+            Err(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+                assert!(e.to_string().contains("Cannot merge branch"));
             }
             _ => panic!("Expected error"),
         }

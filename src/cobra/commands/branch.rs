@@ -44,6 +44,14 @@ pub fn delete(name: &str) -> io::Result<()> {
     Ok(())
 }
 
+pub fn merge(name: &str) -> io::Result<()> {
+    let repo = Repository::open(".")?;
+    let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir);
+    ref_store.merge_branch(name)?;
+    println!("Merged branch '{}' into current branch", name);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +140,51 @@ mod tests {
             Err(e) => {
                 assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
                 assert!(e.to_string().contains("Cannot delete the current branch"));
+            }
+            _ => panic!("Expected error"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_merge_branch_command() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo = Repository::init(temp_dir.path().to_str().unwrap())?;
+        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
+        
+        // Create a branch
+        ref_store.create_branch("feature")?;
+        
+        // Set some commits (simplified for testing)
+        ref_store.update_ref("refs/heads/main", "main_commit")?;
+        ref_store.update_ref("refs/heads/feature", "feature_commit")?;
+        
+        // Merge feature into main
+        ref_store.merge_branch("feature")?;
+        
+        // Verify the merge created a new commit
+        let main_commit = ref_store.read_ref("refs/heads/main")?;
+        assert!(main_commit.is_some());
+        assert_ne!(main_commit.unwrap(), "main_commit"); // Should be different after merge
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_merge_nonexistent_branch_command() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo = Repository::init(temp_dir.path().to_str().unwrap())?;
+        let ref_store = crate::cobra::core::ref_store::RefStore::new(repo.git_dir.clone());
+        
+        // Try to merge a non-existent branch
+        let result = ref_store.merge_branch("nonexistent");
+        assert!(result.is_err());
+        
+        match result {
+            Err(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::NotFound);
+                assert!(e.to_string().contains("does not exist"));
             }
             _ => panic!("Expected error"),
         }

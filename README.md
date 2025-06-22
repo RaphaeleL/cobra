@@ -51,6 +51,9 @@ cobra branch -a
 
 # Delete a branch 
 cobra branch -d dev
+
+# Merge 'dev' into the current branch 
+cobra branch -m dev
 ```
 
 ## Implementation Details
