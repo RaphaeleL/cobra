@@ -44,6 +44,15 @@ impl Object {
         Object::Tree(Vec::new())
     }
 
+    /// Creates a new tree object from a list of entries
+    pub fn new_tree_from_entries(entries: Vec<(String, u32, String)>) -> Object {
+        let tree_entries: Vec<TreeEntry> = entries
+            .into_iter()
+            .map(|(name, mode, hash)| TreeEntry { mode, name, hash })
+            .collect();
+        Object::Tree(tree_entries)
+    }
+
     /// Creates a new commit object
     pub fn new_commit(
         tree: String,

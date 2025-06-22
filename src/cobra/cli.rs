@@ -106,6 +106,51 @@ pub fn run() -> io::Result<()> {
                         .required(true)
                 )
         )
+        .subcommand(
+            Command::new("stash")
+                .about("Stash changes in a dirty working directory")
+                .subcommand(
+                    Command::new("push")
+                        .about("Save your local modifications to a new stash")
+                        .arg(
+                            Arg::new("message")
+                                .help("Optional message for the stash")
+                                .short('m')
+                                .long("message")
+                        )
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about("List all stashes")
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about("Show the contents of a stash")
+                        .arg(
+                            Arg::new("stash")
+                                .help("Stash reference (e.g., stash@{0})")
+                                .default_value("stash@{0}")
+                        )
+                )
+                .subcommand(
+                    Command::new("apply")
+                        .about("Apply a stash to the working directory")
+                        .arg(
+                            Arg::new("stash")
+                                .help("Stash reference (e.g., stash@{0})")
+                                .default_value("stash@{0}")
+                        )
+                )
+                .subcommand(
+                    Command::new("drop")
+                        .about("Remove a stash from the stash list")
+                        .arg(
+                            Arg::new("stash")
+                                .help("Stash reference (e.g., stash@{0})")
+                                .default_value("stash@{0}")
+                        )
+                )
+        )
         .get_matches();
 
     match matches.subcommand() {
@@ -150,6 +195,33 @@ pub fn run() -> io::Result<()> {
         Some(("rebase", sub_matches)) => {
             let branch = sub_matches.get_one::<String>("branch").unwrap();
             commands::rebase::run(branch)
+        },
+        Some(("stash", sub_matches)) => {
+            match sub_matches.subcommand() {
+                Some(("push", sub_matches)) => {
+                    let message = sub_matches.get_one::<String>("message");
+                    commands::stash::push(message)
+                },
+                Some(("list", _)) => {
+                    commands::stash::list()
+                },
+                Some(("show", sub_matches)) => {
+                    let stash = sub_matches.get_one::<String>("stash").unwrap();
+                    commands::stash::show(stash)
+                },
+                Some(("apply", sub_matches)) => {
+                    let stash = sub_matches.get_one::<String>("stash").unwrap();
+                    commands::stash::apply(stash)
+                },
+                Some(("drop", sub_matches)) => {
+                    let stash = sub_matches.get_one::<String>("stash").unwrap();
+                    commands::stash::drop(stash)
+                },
+                _ => {
+                    println!("No stash subcommand was used");
+                    Ok(())
+                }
+            }
         },
         _ => {
             println!("No subcommand was used");

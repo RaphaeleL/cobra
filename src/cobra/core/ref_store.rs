@@ -158,12 +158,12 @@ impl RefStore {
             ))?;
 
         let current_commit = if head_content.starts_with("ref: ") {
-            // HEAD points to a branch
+            // HEAD points to a branch, get the commit from that branch
             let current_branch_ref = &head_content[5..];
             self.read_ref(current_branch_ref)?
                 .ok_or_else(|| io::Error::new(
                     io::ErrorKind::NotFound,
-                    "Current branch reference not found",
+                    format!("Branch '{}' not found", current_branch_ref),
                 ))?
         } else {
             // HEAD points directly to a commit
@@ -207,6 +207,129 @@ impl RefStore {
             self.update_head(&merge_hash)?;
         }
 
+        Ok(())
+    }
+
+    pub fn create_stash(&self, message: Option<&str>) -> io::Result<String> {
+        // Create repository instance
+        let repo = crate::cobra::core::repository::Repository::open(".")?;
+        
+        // Create stash state from current workspace and index
+        let stash_message = message.unwrap_or("WIP on current branch");
+        let stash_state = crate::cobra::core::workspace::StashState::create(&repo, stash_message)?;
+        
+        // Create commit from stash state
+        let stash_hash = stash_state.create_commit(&repo)?;
+        
+        // Add to stash list
+        self.add_to_stash_list(&stash_hash)?;
+        
+        Ok(stash_hash)
+    }
+
+    pub fn list_stashes(&self) -> io::Result<Vec<(String, String)>> {
+        let stash_list_path = self.git_dir.join("refs/stash");
+        if !stash_list_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let content = fs::read_to_string(&stash_list_path)?;
+        let mut stashes = Vec::new();
+        
+        for (index, line) in content.lines().enumerate() {
+            if !line.trim().is_empty() {
+                stashes.push((format!("stash@{{{}}}", index), line.trim().to_string()));
+            }
+        }
+
+        Ok(stashes)
+    }
+
+    pub fn get_stash(&self, stash_ref: &str) -> io::Result<Option<String>> {
+        let stashes = self.list_stashes()?;
+        
+        // Parse stash reference like "stash@{0}"
+        if stash_ref.starts_with("stash@{") && stash_ref.ends_with("}") {
+            let index_str = &stash_ref[7..stash_ref.len()-1];
+            if let Ok(index) = index_str.parse::<usize>() {
+                if index < stashes.len() {
+                    return Ok(Some(stashes[index].1.clone()));
+                }
+            }
+        }
+        
+        // Try direct hash
+        if stash_ref.len() == 40 {
+            return Ok(Some(stash_ref.to_string()));
+        }
+
+        Ok(None)
+    }
+
+    pub fn drop_stash(&self, stash_ref: &str) -> io::Result<()> {
+        let stashes = self.list_stashes()?;
+        let stash_list_path = self.git_dir.join("refs/stash");
+        
+        // Parse stash reference
+        let index = if stash_ref.starts_with("stash@{") && stash_ref.ends_with("}") {
+            let index_str = &stash_ref[7..stash_ref.len()-1];
+            index_str.parse::<usize>().map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidInput, "Invalid stash reference")
+            })?
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Invalid stash reference format",
+            ));
+        };
+
+        if index >= stashes.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Stash '{}' does not exist", stash_ref),
+            ));
+        }
+
+        // Remove the stash from the list
+        let mut new_stashes = stashes;
+        new_stashes.remove(index);
+        
+        // Write updated stash list
+        let content = new_stashes.iter()
+            .map(|(_, hash)| hash.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        if content.is_empty() {
+            fs::remove_file(&stash_list_path)?;
+        } else {
+            fs::write(&stash_list_path, content)?;
+        }
+
+        Ok(())
+    }
+
+    fn add_to_stash_list(&self, stash_hash: &str) -> io::Result<()> {
+        let stash_list_path = self.git_dir.join("refs/stash");
+        
+        // Create refs directory if it doesn't exist
+        if let Some(parent) = stash_list_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Append to stash list
+        let mut content = if stash_list_path.exists() {
+            fs::read_to_string(&stash_list_path)?
+        } else {
+            String::new()
+        };
+
+        if !content.is_empty() {
+            content.push('\n');
+        }
+        content.push_str(stash_hash);
+
+        fs::write(&stash_list_path, content)?;
         Ok(())
     }
 }
@@ -468,6 +591,124 @@ mod tests {
             Err(e) => {
                 assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
                 assert!(e.to_string().contains("Cannot merge branch"));
+            }
+            _ => panic!("Expected error"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_stash() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        ref_store.update_ref("refs/heads/main", "main_commit")?;
+        
+        // Create a stash
+        let stash_hash = ref_store.create_stash(Some("Test stash"))?;
+        assert!(!stash_hash.is_empty());
+        
+        // Verify stash was added to list
+        let stashes = ref_store.list_stashes()?;
+        assert_eq!(stashes.len(), 1);
+        assert_eq!(stashes[0].0, "stash@{0}");
+        assert_eq!(stashes[0].1, stash_hash);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_list_stashes() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        ref_store.update_ref("refs/heads/main", "main_commit")?;
+        
+        // Create multiple stashes
+        ref_store.create_stash(Some("First stash"))?;
+        ref_store.create_stash(Some("Second stash"))?;
+        
+        // List stashes
+        let stashes = ref_store.list_stashes()?;
+        assert_eq!(stashes.len(), 2);
+        assert_eq!(stashes[0].0, "stash@{0}");
+        assert_eq!(stashes[1].0, "stash@{1}");
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_stash() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        ref_store.update_ref("refs/heads/main", "main_commit")?;
+        
+        // Create a stash
+        let stash_hash = ref_store.create_stash(Some("Test stash"))?;
+        
+        // Get stash by reference
+        let retrieved_hash = ref_store.get_stash("stash@{0}")?;
+        assert_eq!(retrieved_hash, Some(stash_hash));
+        
+        // Get non-existent stash
+        let non_existent = ref_store.get_stash("stash@{1}")?;
+        assert_eq!(non_existent, None);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_stash() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        ref_store.update_ref("refs/heads/main", "main_commit")?;
+        
+        // Create stashes
+        ref_store.create_stash(Some("First stash"))?;
+        ref_store.create_stash(Some("Second stash"))?;
+        
+        // Verify we have 2 stashes
+        let stashes = ref_store.list_stashes()?;
+        assert_eq!(stashes.len(), 2);
+        
+        // Drop first stash
+        ref_store.drop_stash("stash@{0}")?;
+        
+        // Verify we have 1 stash left
+        let stashes_after = ref_store.list_stashes()?;
+        assert_eq!(stashes_after.len(), 1);
+        assert_eq!(stashes_after[0].0, "stash@{0}"); // Index should be updated
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_nonexistent_stash() -> io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let ref_store = RefStore::new(temp_dir.path().to_path_buf());
+        
+        // Initialize refs
+        ref_store.create_initial_refs()?;
+        
+        // Try to drop non-existent stash
+        let result = ref_store.drop_stash("stash@{0}");
+        assert!(result.is_err());
+        
+        match result {
+            Err(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::NotFound);
+                assert!(e.to_string().contains("does not exist"));
             }
             _ => panic!("Expected error"),
         }

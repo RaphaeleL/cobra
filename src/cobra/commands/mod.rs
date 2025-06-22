@@ -5,4 +5,5 @@ pub mod log;
 pub mod status;
 pub mod checkout;
 pub mod branch;
-pub mod rebase; 
+pub mod rebase;
+pub mod stash; 
