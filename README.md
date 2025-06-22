@@ -11,7 +11,7 @@ Cobra is a Git-like version control system implemented in Rust. It provides basi
 
 ## Commands
 
-```bash
+```
 $ cobra -h
 A Git-like version control system
 
