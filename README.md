@@ -84,8 +84,8 @@ This is a learning project that implements core Git functionality. While it's fu
 - [x] Commit history
 - [x] Status checking
 - [x] Object storage (blobs, trees, commits)
+- [x] Branch
 - [ ] Remote repository support
-- [ ] Branch (+ Merge, Rebase, Checkout, ...)
 - [ ] Stashing
 
 ## Contributing
